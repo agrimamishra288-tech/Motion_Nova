@@ -5,6 +5,9 @@ html { background: #070b13; }
 body { margin: 0; min-width: 320px; }
 button, input { font: inherit; }
 button:focus-visible, a:focus-visible { outline: 2px solid #7defff; outline-offset: 3px; }
+.profile-fields input:focus, .profile-auth-buttons button:hover { border-color: rgba(0, 240, 255, 0.58) !important; }
+.profile-fields label { min-width: 0; }
+button:hover .profile-avatar-edit { opacity: 1; }
 .evaluator-insights b { display: block; color: #e8ecf5; font-size: 12px; }
 .evaluator-insights small { display: block; color: #7a8699; margin-top: 3px; font-size: 10px; }
 
@@ -17,4 +20,5 @@ button:focus-visible, a:focus-visible { outline: 2px solid #7defff; outline-offs
   .evaluator-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
   .evaluator-insights { grid-template-columns: 1fr !important; }
   .evaluator-title { font-size: 32px !important; }
+  .profile-fields, .profile-auth-buttons { grid-template-columns: 1fr !important; }
 }

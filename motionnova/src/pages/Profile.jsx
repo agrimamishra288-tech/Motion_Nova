@@ -1,459 +1,184 @@
-import React, { useState, useEffect } from "react";
-import { COLORS, FONT_DISPLAY, FONT_MONO, shared } from "../theme.js";
+﻿
+import React, { useEffect, useRef, useState } from "react";
+import {
+  friendlyAuthError,
+  onAuthChange,
+  sendPhoneOTP,
+  setupRecaptcha,
+  signInWithEmail,
+  signInWithGoogle,
+  signOut,
+  signUpWithEmail,
+  updateAccountProfile,
+  verifyPhoneOTP,
+} from "../lib/firebase.js";
+import { COLORS, FONT_MONO, shared } from "../theme.js";
 
-const PROFILE_KEY = "motionnova_profile";
-const emptyProfile = { name: "", age: "", sport: "", goal: "" };
+const emptyProfile = { name: "", age: "", sport: "", goal: "", avatar: "" };
+const inputStyle = (hasError) => ({
+  ...shared.input,
+  marginBottom: 4,
+  borderColor: hasError ? COLORS.red : COLORS.panelBorder,
+  boxShadow: hasError ? "0 0 0 3px rgba(255,71,87,0.12)" : "none",
+});
 
-/* ─────────────────────────────────────────────────────────────────
-   LOCAL-ONLY profile for the MVP demo — stored in localStorage.
-   Social-login buttons are UI-only placeholders ready to wire to
-   Firebase / Auth0 in a production build.
-   ───────────────────────────────────────────────────────────────── */
+function ErrorText({ children }) {
+  return children ? <small style={{ color: "#ff8490", display: "block", minHeight: 18, fontSize: 11 }}>{children}</small> : <small style={{ display: "block", minHeight: 18 }} />;
+}
+
 export default function Profile() {
+  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(emptyProfile);
-  const [saved, setSaved] = useState(false);
-  const [focusedField, setFocusedField] = useState(null);
-  const [socialHover, setSocialHover] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [notice, setNotice] = useState("");
+  const [authMode, setAuthMode] = useState(null); // email | phone
+  const [emailMode, setEmailMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
+  const [authError, setAuthError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const fileInput = useRef(null);
+
+  useEffect(() => onAuthChange((currentUser) => setUser(currentUser)), []);
 
   useEffect(() => {
-    const stored = localStorage.getItem(PROFILE_KEY);
-    if (stored) setProfile(JSON.parse(stored));
-  }, []);
+    const key = `motionnova-profile-${user?.uid || "guest"}`;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key));
+      setProfile({ ...emptyProfile, ...(saved || {}), name: saved?.name || user?.displayName || "", avatar: saved?.avatar || user?.photoURL || "" });
+    } catch {
+      setProfile({ ...emptyProfile, name: user?.displayName || "", avatar: user?.photoURL || "" });
+    }
+    setErrors({});
+  }, [user]);
 
-  const handleChange = (field) => (e) => {
-    setProfile((p) => ({ ...p, [field]: e.target.value }));
-    setSaved(false);
+  const setField = (field, value) => {
+    setProfile((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: "" }));
+    setNotice("");
   };
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const validateProfile = () => {
+    const next = {};
+    if (profile.name.trim().length < 2) next.name = "Enter at least 2 characters.";
+    const age = Number(profile.age);
+    if (!Number.isInteger(age) || age < 13 || age > 120) next.age = "Age must be between 13 and 120.";
+    if (profile.sport.trim().length < 2) next.sport = "Tell us your sport or focus area.";
+    if (profile.goal.trim().length < 3) next.goal = "Add a primary goal (at least 3 characters).";
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
-  const initials = profile.name
-    ? profile.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    if (!validateProfile()) return;
+    const key = `motionnova-profile-${user?.uid || "guest"}`;
+    localStorage.setItem(key, JSON.stringify(profile));
+    if (user) {
+      try { await updateAccountProfile(user, { displayName: profile.name, photoURL: profile.avatar || null }); }
+      catch { /* The local profile remains saved if Firebase profile metadata is unavailable. */ }
+    }
+    setNotice("Profile saved successfully.");
+  };
 
-  const inputStyle = (field) => ({
-    ...styles.input,
-    borderColor: focusedField === field ? COLORS.cyan : "rgba(0,240,255,0.15)",
-    boxShadow: focusedField === field ? `0 0 0 3px rgba(0,240,255,0.08)` : "none",
-  });
+  const chooseAvatar = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setErrors((current) => ({ ...current, avatar: "Choose an image file." }));
+    if (file.size > 2 * 1024 * 1024) return setErrors((current) => ({ ...current, avatar: "Image must be smaller than 2 MB." }));
+    const reader = new FileReader();
+    reader.onload = () => { setField("avatar", reader.result); setErrors((current) => ({ ...current, avatar: "" })); };
+    reader.readAsDataURL(file);
+  };
 
+  const closeAuth = () => { setAuthMode(null); setAuthError(""); setLoading(false); setConfirmation(null); setOtp(""); };
+  const googleLogin = async () => {
+    setLoading(true); setAuthError("");
+    try { await signInWithGoogle(); setNotice("Signed in with Google."); }
+    catch (error) { setAuthError(friendlyAuthError(error.code)); }
+    finally { setLoading(false); }
+  };
+  const emailLogin = async (event) => {
+    event.preventDefault(); setAuthError("");
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setAuthError("Enter a valid email address.");
+    if (password.length < 6) return setAuthError("Password must be at least 6 characters.");
+    setLoading(true);
+    try {
+      if (emailMode === "signup") await signUpWithEmail(email, password);
+      else await signInWithEmail(email, password);
+      closeAuth(); setNotice(emailMode === "signup" ? "Account created and signed in." : "Signed in successfully.");
+    } catch (error) { setAuthError(friendlyAuthError(error.code)); setLoading(false); }
+  };
+  const startPhoneLogin = async (event) => {
+    event.preventDefault(); setAuthError("");
+    if (!/^\+[1-9]\d{7,14}$/.test(phone.replace(/[\s()-]/g, ""))) return setAuthError("Use international format, e.g. +91 9876543210.");
+    setLoading(true);
+    try {
+      setupRecaptcha("recaptcha-container");
+      const result = await sendPhoneOTP(phone.replace(/[\s()-]/g, ""));
+      setConfirmation(result);
+    } catch (error) { setAuthError(friendlyAuthError(error.code)); }
+    finally { setLoading(false); }
+  };
+  const finishPhoneLogin = async (event) => {
+    event.preventDefault(); setAuthError("");
+    if (!/^\d{6}$/.test(otp)) return setAuthError("Enter the 6-digit code we sent.");
+    setLoading(true);
+    try { await verifyPhoneOTP(confirmation, otp); closeAuth(); setNotice("Phone number verified and signed in."); }
+    catch (error) { setAuthError(friendlyAuthError(error.code)); setLoading(false); }
+  };
+
+  const accountName = profile.name || user?.displayName || "Your Name";
+  const avatar = profile.avatar || user?.photoURL;
   return (
-    <div style={styles.page}>
-      {/* Ambient orbs */}
-      <div style={styles.orb1} />
-      <div style={styles.orb2} />
-
-      <div style={styles.wrapper}>
-
-        {/* Page header */}
-        <div style={styles.pageHeader}>
-          <div style={styles.badge}>MY ACCOUNT</div>
-          <h1 style={styles.pageTitle}>Athlete Profile</h1>
-          <p style={styles.pageSubtitle}>
-            Your data lives locally on this device for the demo —&nbsp;
-            <span style={{ color: COLORS.cyan }}>no account or server yet.</span>
-          </p>
+    <main style={{ ...shared.content, maxWidth: 860, paddingTop: 36 }}>
+      <section style={{ ...shared.panel, padding: "38px 44px", animation: "fadeInUp .5s ease both" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20, paddingBottom: 28, borderBottom: `1px solid ${COLORS.panelBorder}` }}>
+          <button type="button" onClick={() => fileInput.current?.click()} style={styles.avatarButton} title="Upload avatar">
+            {avatar ? <img src={avatar} alt="Profile avatar" style={styles.avatarImage} /> : <span>?</span>}
+            <span className="profile-avatar-edit" style={styles.avatarHint}>Edit</span>
+          </button>
+          <input ref={fileInput} onChange={chooseAvatar} type="file" accept="image/*" style={{ display: "none" }} />
+          <div><h1 style={{ margin: 0, fontSize: 22 }}>{accountName}</h1><p style={{ margin: "5px 0 0", color: COLORS.muted }}>{profile.sport || user?.email || user?.phoneNumber || "Sport / Focus Area"}</p></div>
         </div>
-
-        {/* Main card */}
-        <div style={styles.card}>
-
-          {/* Avatar row */}
-          <div style={styles.avatarRow}>
-            <div style={styles.avatarRing}>
-              <div style={styles.avatar}>{initials}</div>
-            </div>
-            <div>
-              <div style={styles.avatarName}>{profile.name || "Your Name"}</div>
-              <div style={styles.avatarSub}>{profile.sport || "Sport / Focus Area"}</div>
-            </div>
+        <ErrorText>{errors.avatar}</ErrorText>
+        <form onSubmit={saveProfile} noValidate>
+          <h2 style={styles.sectionHeading}>PROFILE DETAILS</h2>
+          <div className="profile-fields" style={styles.grid}>
+            <label style={styles.fieldLabel}>FULL NAME<input value={profile.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Krishna Mahajan" style={inputStyle(errors.name)} /><ErrorText>{errors.name}</ErrorText></label>
+            <label style={styles.fieldLabel}>AGE<input type="number" value={profile.age} onChange={(e) => setField("age", e.target.value)} min="13" max="120" step="1" inputMode="numeric" placeholder="e.g. 19" style={inputStyle(errors.age)} /><ErrorText>{errors.age}</ErrorText></label>
+            <label style={styles.fieldLabel}>SPORT / FOCUS AREA<input value={profile.sport} onChange={(e) => setField("sport", e.target.value)} placeholder="e.g. Athletics, Strength Training" style={inputStyle(errors.sport)} /><ErrorText>{errors.sport}</ErrorText></label>
+            <label style={styles.fieldLabel}>PRIMARY GOAL<input value={profile.goal} onChange={(e) => setField("goal", e.target.value)} placeholder="e.g. Improve squat depth" style={inputStyle(errors.goal)} /><ErrorText>{errors.goal}</ErrorText></label>
           </div>
-
-          <div style={styles.divider} />
-
-          {/* Profile form */}
-          <form onSubmit={handleSave}>
-            <div style={styles.sectionLabel}>PROFILE DETAILS</div>
-
-            <div style={styles.grid}>
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Full Name</label>
-                <input
-                  style={inputStyle("name")}
-                  value={profile.name}
-                  onChange={handleChange("name")}
-                  onFocus={() => setFocusedField("name")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="e.g. Krishna Mahajan"
-                />
-              </div>
-
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Age</label>
-                <input
-                  style={inputStyle("age")}
-                  type="number"
-                  value={profile.age}
-                  onChange={handleChange("age")}
-                  onFocus={() => setFocusedField("age")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="e.g. 19"
-                />
-              </div>
-
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Sport / Focus Area</label>
-                <input
-                  style={inputStyle("sport")}
-                  value={profile.sport}
-                  onChange={handleChange("sport")}
-                  onFocus={() => setFocusedField("sport")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="e.g. Athletics, Strength Training"
-                />
-              </div>
-
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Primary Goal</label>
-                <input
-                  style={inputStyle("goal")}
-                  value={profile.goal}
-                  onChange={handleChange("goal")}
-                  onFocus={() => setFocusedField("goal")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="e.g. Improve squat depth"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              style={styles.saveBtn}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-2px)";
-                e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,240,255,0.28)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,240,255,0.15)";
-              }}
-            >
-              {saved ? "✓  Profile Saved!" : "Save Profile"}
-            </button>
-          </form>
-
-          <div style={styles.divider} />
-
-          {/* Sign-in / Connect section */}
-          <div style={styles.sectionLabel}>
-            CONNECT ACCOUNT
-            <span style={styles.comingSoon}>Coming soon</span>
+          <button type="submit" style={{ ...shared.btn, ...shared.btnPrimary, width: "100%", marginTop: 10 }}>Save Profile</button>
+          {notice && <p role="status" style={{ color: COLORS.green, textAlign: "center", margin: "12px 0 0", fontSize: 13 }}>{notice}</p>}
+        </form>
+        <div style={styles.connect}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><h2 style={{ ...styles.sectionHeading, margin: 0 }}>CONNECT ACCOUNT</h2>{user && <button onClick={() => signOut()} style={styles.signOut}>Sign out</button>}</div>
+          <p style={{ color: COLORS.muted, marginTop: 12 }}>{user ? `Signed in as ${user.email || user.phoneNumber || "Google account"}.` : "Sign in to sync your profile and history across devices."}</p>
+          <div className="profile-auth-buttons" style={styles.grid}>
+            <button onClick={googleLogin} disabled={loading} style={styles.authButton}><b style={{ color: "#4285f4" }}>G</b> Continue with Google</button>
+            <button onClick={() => { setAuthMode("email"); setEmailMode("signin"); setAuthError(""); }} style={styles.authButton}>✉ <span>Continue with Email</span></button>
+            <button onClick={() => { setAuthMode("phone"); setAuthError(""); }} style={styles.authButton}>♧ <span>Continue with Phone</span></button>
+            <button disabled title="Apple sign-in has not been configured" style={{ ...styles.authButton, opacity: .5, cursor: "not-allowed" }}>● <span>Continue with Apple</span></button>
           </div>
-          <p style={styles.connectHint}>
-            Sign in to sync your profile and history across devices.
-          </p>
-
-          <div style={styles.socialGrid}>
-            {/* Google */}
-            <button
-              style={{ ...styles.socialBtn, ...(socialHover === "google" ? styles.socialBtnHover : {}) }}
-              onMouseEnter={() => setSocialHover("google")}
-              onMouseLeave={() => setSocialHover(null)}
-              onClick={() => alert("Google sign-in coming soon!")}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
-            </button>
-
-            {/* Email */}
-            <button
-              style={{ ...styles.socialBtn, ...(socialHover === "email" ? styles.socialBtnHover : {}) }}
-              onMouseEnter={() => setSocialHover("email")}
-              onMouseLeave={() => setSocialHover(null)}
-              onClick={() => alert("Email sign-in coming soon!")}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.cyan} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="4" width="20" height="16" rx="2"/>
-                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-              </svg>
-              Continue with Email
-            </button>
-
-            {/* Phone */}
-            <button
-              style={{ ...styles.socialBtn, ...(socialHover === "phone" ? styles.socialBtnHover : {}) }}
-              onMouseEnter={() => setSocialHover("phone")}
-              onMouseLeave={() => setSocialHover(null)}
-              onClick={() => alert("Phone sign-in coming soon!")}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.18 6.18l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-              </svg>
-              Continue with Phone
-            </button>
-
-            {/* Apple */}
-            <button
-              style={{ ...styles.socialBtn, ...(socialHover === "apple" ? styles.socialBtnHover : {}) }}
-              onMouseEnter={() => setSocialHover("apple")}
-              onMouseLeave={() => setSocialHover(null)}
-              onClick={() => alert("Apple sign-in coming soon!")}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill={COLORS.text}>
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.42.07 2.4.83 3.22.85.95-.19 1.84-.93 3.18-.85 1.66.12 2.91.82 3.72 2.07-3.45 2.02-2.89 6.57.88 7.81zm-4.54-14.7c-2.17.2-3.94 2.47-3.74 4.41 2.25.17 4.08-1.98 3.74-4.41z"/>
-              </svg>
-              Continue with Apple
-            </button>
-          </div>
-
-          <p style={styles.tos}>
-            By connecting, you agree to our{" "}
-            <span style={styles.link}>Terms of Service</span> and{" "}
-            <span style={styles.link}>Privacy Policy</span>.
-          </p>
         </div>
-      </div>
-    </div>
+      </section>
+      {authMode && <div role="dialog" aria-modal="true" style={styles.overlay} onMouseDown={(e) => e.target === e.currentTarget && closeAuth()}><section style={styles.modal}>
+        <button onClick={closeAuth} style={styles.closeButton} aria-label="Close">×</button>
+        {authMode === "email" ? <form onSubmit={emailLogin} noValidate><h2 style={styles.modalTitle}>{emailMode === "signin" ? "Sign in with email" : "Create your account"}</h2><p style={styles.modalCopy}>{emailMode === "signin" ? "Welcome back to MotionNova." : "Use your email and password to get started."}</p><label style={shared.label}>EMAIL<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" style={inputStyle(false)} /></label><label style={shared.label}>PASSWORD<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={emailMode === "signin" ? "current-password" : "new-password"} style={inputStyle(false)} /></label><ErrorText>{authError}</ErrorText><button disabled={loading} style={{ ...shared.btn, ...shared.btnPrimary, width: "100%" }}>{loading ? "Please wait…" : emailMode === "signin" ? "Sign in" : "Create account"}</button><p style={styles.switchText}>{emailMode === "signin" ? "New to MotionNova?" : "Already have an account?"} <button type="button" onClick={() => { setEmailMode(emailMode === "signin" ? "signup" : "signin"); setAuthError(""); }} style={styles.textButton}>{emailMode === "signin" ? "Create an account" : "Sign in"}</button></p></form> : <form onSubmit={confirmation ? finishPhoneLogin : startPhoneLogin} noValidate><h2 style={styles.modalTitle}>{confirmation ? "Enter verification code" : "Sign in with phone"}</h2><p style={styles.modalCopy}>{confirmation ? `We sent a 6-digit code to ${phone}.` : "We’ll send a one-time verification code."}</p>{confirmation ? <label style={shared.label}>ONE-TIME CODE<input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" style={inputStyle(false)} /></label> : <label style={shared.label}>PHONE NUMBER<input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" placeholder="+91 9876543210" style={inputStyle(false)} /></label>}<ErrorText>{authError}</ErrorText><button disabled={loading} style={{ ...shared.btn, ...shared.btnPrimary, width: "100%" }}>{loading ? "Please wait…" : confirmation ? "Verify and sign in" : "Send OTP"}</button><div id="recaptcha-container" /></form>}
+      </section></div>}
+    </main>
   );
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: `radial-gradient(circle at 18% 20%, rgba(168,85,247,0.18), transparent 40%),
-                 radial-gradient(circle at 82% 10%, rgba(0,240,255,0.1), transparent 35%),
-                 linear-gradient(160deg, #080b14 0%, #0b1020 60%, #070b13 100%)`,
-    color: COLORS.text,
-    fontFamily: FONT_DISPLAY,
-    position: "relative",
-    overflow: "hidden",
-    paddingBottom: 80,
-  },
-  orb1: {
-    position: "absolute", top: -80, left: "15%",
-    width: 340, height: 340, borderRadius: "50%",
-    background: "radial-gradient(circle, rgba(168,85,247,0.12) 0%, transparent 70%)",
-    pointerEvents: "none",
-  },
-  orb2: {
-    position: "absolute", top: 60, right: "10%",
-    width: 240, height: 240, borderRadius: "50%",
-    background: "radial-gradient(circle, rgba(0,240,255,0.08) 0%, transparent 70%)",
-    pointerEvents: "none",
-  },
-  wrapper: {
-    maxWidth: 680,
-    margin: "0 auto",
-    padding: "60px 24px 40px",
-    position: "relative",
-    zIndex: 1,
-  },
-  pageHeader: {
-    textAlign: "center",
-    marginBottom: 36,
-  },
-  badge: {
-    display: "inline-block",
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: 2,
-    color: COLORS.cyan,
-    border: `1px solid rgba(0,240,255,0.3)`,
-    borderRadius: 20,
-    padding: "4px 14px",
-    marginBottom: 14,
-    background: "rgba(0,240,255,0.05)",
-    fontFamily: FONT_MONO,
-  },
-  pageTitle: {
-    fontSize: 34,
-    fontWeight: 800,
-    margin: "0 0 10px",
-    background: `linear-gradient(135deg, #fff 30%, ${COLORS.cyan} 100%)`,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-    letterSpacing: -0.5,
-  },
-  pageSubtitle: {
-    fontSize: 14,
-    color: COLORS.muted,
-    lineHeight: 1.6,
-    margin: 0,
-  },
-  card: {
-    background: "rgba(14,20,36,0.72)",
-    border: "1px solid rgba(0,240,255,0.12)",
-    borderRadius: 24,
-    padding: "32px 36px",
-    boxShadow: "0 32px 80px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)",
-    backdropFilter: "blur(24px)",
-  },
-  avatarRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 18,
-    marginBottom: 28,
-  },
-  avatarRing: {
-    padding: 3,
-    borderRadius: "50%",
-    background: `linear-gradient(135deg, ${COLORS.cyan}, ${COLORS.purple})`,
-    flexShrink: 0,
-  },
-  avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: "50%",
-    background: "#0b1220",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 20,
-    fontWeight: 800,
-    color: COLORS.cyan,
-    letterSpacing: 1,
-    fontFamily: FONT_MONO,
-  },
-  avatarName: {
-    fontSize: 17,
-    fontWeight: 700,
-    color: COLORS.text,
-    marginBottom: 3,
-  },
-  avatarSub: {
-    fontSize: 12,
-    color: COLORS.muted,
-    letterSpacing: 0.3,
-  },
-  divider: {
-    height: 1,
-    background: "rgba(0,240,255,0.08)",
-    margin: "24px 0",
-  },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: 2,
-    color: COLORS.muted,
-    fontFamily: FONT_MONO,
-    marginBottom: 18,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
-  comingSoon: {
-    fontSize: 9,
-    background: "rgba(168,85,247,0.15)",
-    border: "1px solid rgba(168,85,247,0.3)",
-    color: "#a855f7",
-    borderRadius: 20,
-    padding: "2px 8px",
-    letterSpacing: 1,
-    fontFamily: FONT_MONO,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "0 20px",
-  },
-  fieldGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: COLORS.muted,
-    letterSpacing: 0.8,
-    marginBottom: 7,
-    display: "block",
-    textTransform: "uppercase",
-    fontFamily: FONT_MONO,
-  },
-  input: {
-    width: "100%",
-    padding: "11px 14px",
-    borderRadius: 10,
-    border: `1px solid rgba(0,240,255,0.15)`,
-    background: "rgba(255,255,255,0.03)",
-    color: COLORS.text,
-    fontFamily: FONT_DISPLAY,
-    fontSize: 14,
-    outline: "none",
-    transition: "border-color 0.2s, box-shadow 0.2s",
-    boxSizing: "border-box",
-  },
-  saveBtn: {
-    width: "100%",
-    padding: "13px 20px",
-    borderRadius: 12,
-    border: "none",
-    background: `linear-gradient(90deg, ${COLORS.cyan}, ${COLORS.purple})`,
-    color: "#04101a",
-    fontFamily: FONT_DISPLAY,
-    fontWeight: 700,
-    fontSize: 15,
-    cursor: "pointer",
-    transition: "transform 0.15s, box-shadow 0.25s",
-    boxShadow: "0 4px 20px rgba(0,240,255,0.15)",
-    letterSpacing: 0.3,
-    marginTop: 4,
-  },
-  connectHint: {
-    fontSize: 13,
-    color: COLORS.muted,
-    marginBottom: 18,
-    marginTop: -8,
-    lineHeight: 1.5,
-  },
-  socialGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-  socialBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "11px 16px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.03)",
-    color: COLORS.text,
-    fontFamily: FONT_DISPLAY,
-    fontWeight: 500,
-    fontSize: 13,
-    cursor: "pointer",
-    transition: "background 0.18s, border-color 0.18s, transform 0.15s",
-    letterSpacing: 0.2,
-  },
-  socialBtnHover: {
-    background: "rgba(255,255,255,0.07)",
-    borderColor: "rgba(0,240,255,0.25)",
-    transform: "translateY(-1px)",
-  },
-  tos: {
-    fontSize: 11,
-    color: "rgba(122,134,153,0.7)",
-    textAlign: "center",
-    marginTop: 20,
-    marginBottom: 0,
-    lineHeight: 1.6,
-  },
-  link: {
-    color: COLORS.cyan,
-    cursor: "pointer",
-    textDecoration: "underline",
-    textDecorationColor: "rgba(0,240,255,0.35)",
-  },
+  avatarButton: { position: "relative", width: 80, height: 80, flex: "0 0 80px", overflow: "hidden", borderRadius: "50%", border: "3px solid #38c9ff", background: "#10152b", color: COLORS.cyan, fontSize: 30, fontWeight: 800, cursor: "pointer", padding: 0 },
+  avatarImage: { width: "100%", height: "100%", objectFit: "cover" }, avatarHint: { position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(4,12,24,.64)", fontSize: 11, opacity: 0, transition: "opacity .2s" },
+  sectionHeading: { fontFamily: FONT_MONO, fontSize: 13, letterSpacing: 1.4, color: "#909bb0", margin: "27px 0 18px" }, grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px 24px" }, fieldLabel: { display: "block", fontFamily: FONT_MONO, fontSize: 12, letterSpacing: .7, color: "#909bb0" },
+  connect: { borderTop: `1px solid ${COLORS.panelBorder}`, marginTop: 32, paddingTop: 5 }, authButton: { ...shared.btn, ...shared.btnGhost, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 52, fontSize: 15 }, signOut: { border: 0, color: COLORS.cyan, background: "transparent", cursor: "pointer", fontSize: 13 },
+  overlay: { position: "fixed", inset: 0, zIndex: 100, background: "rgba(3,6,13,.76)", display: "grid", placeItems: "center", padding: 20, backdropFilter: "blur(6px)" }, modal: { position: "relative", width: "min(100%, 420px)", background: "#101629", border: `1px solid ${COLORS.panelBorder}`, boxShadow: "0 22px 70px rgba(0,0,0,.5)", borderRadius: 18, padding: "32px 30px" }, closeButton: { position: "absolute", right: 14, top: 10, background: "transparent", border: 0, color: COLORS.muted, fontSize: 28, cursor: "pointer" }, modalTitle: { margin: 0, fontSize: 21 }, modalCopy: { color: COLORS.muted, margin: "8px 0 22px", fontSize: 14 }, switchText: { color: COLORS.muted, textAlign: "center", fontSize: 13, margin: "20px 0 0" }, textButton: { background: "transparent", border: 0, color: COLORS.cyan, cursor: "pointer", padding: 0, font: "inherit" },
 };
