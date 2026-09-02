@@ -23,15 +23,17 @@ pip install -r requirements.txt
 flask --app app run --debug
 ```
 
-## Deploy the API
+## Deploy on Vercel
 
-Deploy the `backend` directory to a Python host such as Render or Railway.
-Use `gunicorn app:app` as the start command and configure these environment
-variables:
+This repository includes `api/index.py`, which exposes the Flask application
+as a Vercel Python Function. The frontend calls it at `/api`, on the same
+domain, so no API URL is required.
+
+In the Vercel project, configure these environment variables:
 
 - `FIREBASE_SERVICE_ACCOUNT`: the complete service-account JSON on one line
 - `CORS_ORIGINS`: your Vercel URL, for example `https://motion-nova-theta.vercel.app`
 
-Then set `VITE_API_BASE_URL` in the Vercel project's environment variables to
-the deployed API URL, for example `https://motionnova-api.onrender.com`, and
-redeploy the frontend.
+Redeploy after setting the secrets. You can alternatively set
+`VITE_API_BASE_URL` to use a separately hosted Flask API, but it is not needed
+for the included Vercel Function.

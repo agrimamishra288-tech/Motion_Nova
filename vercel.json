@@ -1,5 +1,11 @@
 {
   "installCommand": "cd motionnova && npm ci",
   "buildCommand": "cd motionnova && npm run build",
-  "outputDirectory": "motionnova/dist"
+  "outputDirectory": "motionnova/dist",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "backend/**",
+      "excludeFiles": "motionnova/node_modules/**"
+    }
+  }
 }

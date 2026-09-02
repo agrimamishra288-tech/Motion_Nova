@@ -11,8 +11,6 @@ export function getClientId() {
 }
 
 async function request(path, options = {}) {
-  if (!API_BASE_URL) throw new Error("The Firebase API URL has not been configured.");
-
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -41,6 +39,7 @@ export function removeSession(sessionId) {
   return request(`/api/sessions/${sessionId}`, { method: "DELETE" });
 }
 
+// An empty URL means use the Flask function deployed at /api on this Vercel site.
 export function isBackendConfigured() {
-  return Boolean(API_BASE_URL);
+  return true;
 }
