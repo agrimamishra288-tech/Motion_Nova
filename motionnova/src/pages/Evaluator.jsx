@@ -230,8 +230,14 @@ export default function Evaluator() {
 
     setSessionLog((currentLog) => {
       if (currentLog.length === 0) {
-        setSummary({ totalReps: 0, formScore: 0, recommendation: "No reps detected — try again with your full body in frame.", log: [] });
-        setSaveMessage("No session was saved because no completed reps were detected.");
+        const completedSession = {
+          totalReps: 0,
+          formScore: 0,
+          recommendation: "No reps detected — try again with your full body in frame.",
+          log: [],
+        };
+        setSummary(completedSession);
+        saveCompletedSession(completedSession);
         return currentLog;
       }
       const avgScore = Math.round(currentLog.reduce((sum, r) => sum + r.score, 0) / currentLog.length);
