@@ -142,7 +142,15 @@ export default function Profile() {
             <span className="profile-avatar-edit" style={styles.avatarHint}>Edit</span>
           </button>
           <input ref={fileInput} onChange={chooseAvatar} type="file" accept="image/*" style={{ display: "none" }} />
-          <div><h1 style={{ margin: 0, fontSize: 22 }}>{accountName}</h1><p style={{ margin: "5px 0 0", color: COLORS.muted }}>{profile.sport || user?.email || user?.phoneNumber || "Sport / Focus Area"}</p></div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22 }}>{accountName}</h1>
+            <p style={{ margin: "5px 0 10px", color: COLORS.muted }}>{profile.sport || user?.email || user?.phoneNumber || "Sport / Focus Area"}</p>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => fileInput.current?.click()} style={styles.uploadButton}>Upload image</button>
+              {profile.avatar && <button type="button" onClick={() => setField("avatar", "")} style={styles.removeButton}>Remove photo</button>}
+              <span style={{ color: COLORS.muted, fontSize: 11 }}>JPG, PNG, or WebP · max 2 MB</span>
+            </div>
+          </div>
         </div>
         <ErrorText>{errors.avatar}</ErrorText>
         <form onSubmit={saveProfile} noValidate>
@@ -178,6 +186,8 @@ export default function Profile() {
 const styles = {
   avatarButton: { position: "relative", width: 80, height: 80, flex: "0 0 80px", overflow: "hidden", borderRadius: "50%", border: "3px solid #38c9ff", background: "#10152b", color: COLORS.cyan, fontSize: 30, fontWeight: 800, cursor: "pointer", padding: 0 },
   avatarImage: { width: "100%", height: "100%", objectFit: "cover" }, avatarHint: { position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(4,12,24,.64)", fontSize: 11, opacity: 0, transition: "opacity .2s" },
+  uploadButton: { border: `1px solid rgba(0,240,255,.42)`, background: "rgba(0,240,255,.08)", color: COLORS.cyan, borderRadius: 7, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  removeButton: { border: 0, background: "transparent", color: COLORS.muted, padding: "6px 0", fontSize: 12, cursor: "pointer", textDecoration: "underline" },
   sectionHeading: { fontFamily: FONT_MONO, fontSize: 13, letterSpacing: 1.4, color: "#909bb0", margin: "27px 0 18px" }, grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px 24px" }, fieldLabel: { display: "block", fontFamily: FONT_MONO, fontSize: 12, letterSpacing: .7, color: "#909bb0" },
   connect: { borderTop: `1px solid ${COLORS.panelBorder}`, marginTop: 32, paddingTop: 5 }, authButton: { ...shared.btn, ...shared.btnGhost, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 52, fontSize: 15 }, signOut: { border: 0, color: COLORS.cyan, background: "transparent", cursor: "pointer", fontSize: 13 },
   overlay: { position: "fixed", inset: 0, zIndex: 100, background: "rgba(3,6,13,.76)", display: "grid", placeItems: "center", padding: 20, backdropFilter: "blur(6px)" }, modal: { position: "relative", width: "min(100%, 420px)", background: "#101629", border: `1px solid ${COLORS.panelBorder}`, boxShadow: "0 22px 70px rgba(0,0,0,.5)", borderRadius: 18, padding: "32px 30px" }, closeButton: { position: "absolute", right: 14, top: 10, background: "transparent", border: 0, color: COLORS.muted, fontSize: 28, cursor: "pointer" }, modalTitle: { margin: 0, fontSize: 21 }, modalCopy: { color: COLORS.muted, margin: "8px 0 22px", fontSize: 14 }, switchText: { color: COLORS.muted, textAlign: "center", fontSize: 13, margin: "20px 0 0" }, textButton: { background: "transparent", border: 0, color: COLORS.cyan, cursor: "pointer", padding: 0, font: "inherit" },
