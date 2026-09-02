@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { COLORS, FONT_MONO, shared } from "../theme.js";
+import { getSessions, isBackendConfigured, removeSession } from "../lib/api.js";
 
 /* Reads every localStorage key that starts with "motionnova_session_"
    (that's the exact key format Evaluator.jsx saves with), parses it,
@@ -13,14 +14,24 @@ export default function History() {
     loadSessions();
   }, []);
 
-  function loadSessions() {
+  async function loadSessions() {
+    if (isBackendConfigured()) {
+      try {
+        const { sessions: cloudSessions } = await getSessions();
+        setSessions(cloudSessions.map((session) => ({ ...session, key: `firebase:${session.id}`, source: "firebase" })));
+        return;
+      } catch {
+        // The local history remains usable if the API is temporarily unavailable.
+      }
+    }
+
     const keys = Object.keys(localStorage).filter((k) => k.startsWith("motionnova_session_"));
     const parsed = keys
       .map((key) => {
         try {
           const data = JSON.parse(localStorage.getItem(key));
           const timestamp = Number(key.replace("motionnova_session_", ""));
-          return { key, timestamp, ...data };
+          return { key, timestamp, source: "local", ...data };
         } catch {
           return null;
         }
@@ -30,13 +41,25 @@ export default function History() {
     setSessions(parsed);
   }
 
-  function deleteSession(key) {
+  async function deleteSession(key) {
+    if (key.startsWith("firebase:")) {
+      try {
+        await removeSession(key.replace("firebase:", ""));
+      } catch {
+        return;
+      }
+    } else {
     localStorage.removeItem(key);
+    }
     loadSessions();
   }
 
-  function clearAll() {
+  async function clearAll() {
     if (!window.confirm("Delete all saved sessions? This can't be undone.")) return;
+    const cloudSessions = sessions.filter((session) => session.source === "firebase");
+    if (cloudSessions.length > 0) {
+      await Promise.all(cloudSessions.map((session) => removeSession(session.key.replace("firebase:", "")).catch(() => null)));
+    }
     Object.keys(localStorage)
       .filter((k) => k.startsWith("motionnova_session_"))
       .forEach((k) => localStorage.removeItem(k));
@@ -49,7 +72,7 @@ export default function History() {
         <div>
           <h1 style={styles.title}>Session History</h1>
           <p style={{ color: COLORS.muted, marginTop: 4 }}>
-            Sessions saved from the Evaluator, stored locally in this browser.
+            Sessions saved from the Evaluator. Firebase sync is used when the backend is connected.
           </p>
         </div>
         {sessions.length > 0 && (

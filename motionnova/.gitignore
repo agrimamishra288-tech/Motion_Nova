@@ -3,4 +3,5 @@ dist
 dist-ssr
 *.local
 .env
+service-account.json
 .DS_Store

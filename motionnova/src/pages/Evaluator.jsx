@@ -8,6 +8,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { COLORS, FONT_MONO, shared } from "../theme.js";
+import { createSession, isBackendConfigured } from "../lib/api.js";
 
 /* ── MediaPipe CDN loader ─────────────────────────────────────────────────
    The @mediapipe/pose npm package is NOT compatible with Vite's bundler —
@@ -243,13 +244,7 @@ export default function Evaluator() {
       const completedSession = { totalReps: currentLog.length, formScore: avgScore, recommendation, log: currentLog };
       setSummary(completedSession);
 
-      try {
-        const key = `motionnova_session_${Date.now()}`;
-        localStorage.setItem(key, JSON.stringify(completedSession));
-        setSaveMessage("✓ Session saved automatically in this browser.");
-      } catch {
-        setSaveMessage("Unable to save this session in this browser.");
-      }
+      saveCompletedSession(completedSession);
       return currentLog;
     });
   };
@@ -260,6 +255,22 @@ export default function Evaluator() {
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  async function saveCompletedSession(completedSession) {
+    try {
+      if (!isBackendConfigured()) throw new Error("Backend is not configured.");
+      await createSession(completedSession);
+      setSaveMessage("✓ Session saved securely to your Firebase history.");
+    } catch {
+      try {
+        const key = `motionnova_session_${Date.now()}`;
+        localStorage.setItem(key, JSON.stringify(completedSession));
+        setSaveMessage("✓ Firebase is unavailable, so this session was saved in this browser.");
+      } catch {
+        setSaveMessage("Unable to save this session.");
+      }
+    }
+  }
 
   const feedbackColor = feedback.level === "good" ? COLORS.green : feedback.level === "warn" ? COLORS.amber : COLORS.muted;
   const feedbackGlow =
