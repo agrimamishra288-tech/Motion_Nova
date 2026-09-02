@@ -73,6 +73,7 @@ export default function Evaluator() {
   const [sessionLog, setSessionLog] = useState([]);
   const [summary, setSummary] = useState(null);
   const [depthPercent, setDepthPercent] = useState(0);
+  const [saveMessage, setSaveMessage] = useState("");
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -188,6 +189,7 @@ export default function Evaluator() {
 
       setSessionLog([]);
       setSummary(null);
+      setSaveMessage("");
       setRepCount(0);
       setFeedback({ text: "Session live — get into position!", level: "idle" });
       stateRef.current = "STANDING";
@@ -228,6 +230,7 @@ export default function Evaluator() {
     setSessionLog((currentLog) => {
       if (currentLog.length === 0) {
         setSummary({ totalReps: 0, formScore: 0, recommendation: "No reps detected — try again with your full body in frame.", log: [] });
+        setSaveMessage("No session was saved because no completed reps were detected.");
         return currentLog;
       }
       const avgScore = Math.round(currentLog.reduce((sum, r) => sum + r.score, 0) / currentLog.length);
@@ -237,7 +240,16 @@ export default function Evaluator() {
           ? "Focus on squatting deeper — aim to bring your hips level with your knees on every rep."
           : "Solid depth control this session — keep it up and start focusing on tempo and control.";
 
-      setSummary({ totalReps: currentLog.length, formScore: avgScore, recommendation, log: currentLog });
+      const completedSession = { totalReps: currentLog.length, formScore: avgScore, recommendation, log: currentLog };
+      setSummary(completedSession);
+
+      try {
+        const key = `motionnova_session_${Date.now()}`;
+        localStorage.setItem(key, JSON.stringify(completedSession));
+        setSaveMessage("✓ Session saved automatically in this browser.");
+      } catch {
+        setSaveMessage("Unable to save this session in this browser.");
+      }
       return currentLog;
     });
   };
@@ -248,13 +260,6 @@ export default function Evaluator() {
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     };
   }, []);
-
-  const saveSession = () => {
-    if (!summary) return;
-    const key = `motionnova_session_${Date.now()}`;
-    localStorage.setItem(key, JSON.stringify(summary));
-    alert("Session saved! View it anytime on the History page.");
-  };
 
   const feedbackColor = feedback.level === "good" ? COLORS.green : feedback.level === "warn" ? COLORS.amber : COLORS.muted;
   const feedbackGlow =
@@ -396,14 +401,9 @@ export default function Evaluator() {
                 <span style={{ color: COLORS.muted, fontSize: 13 }}>Coaching Recommendation</span>
                 <p style={{ color: COLORS.text, marginTop: 6, lineHeight: 1.5 }}>{summary.recommendation}</p>
               </div>
-              <button
-                style={{ ...shared.btn, ...shared.btnPrimary, marginTop: 12, width: "100%" }}
-                onClick={saveSession}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
-              >
-                💾 Save Session Results
-              </button>
+              <p style={{ color: summary.totalReps > 0 ? COLORS.green : COLORS.amber, fontSize: 13, margin: "12px 0 0" }}>
+                {saveMessage}
+              </p>
             </div>
           )}
         </section>
