@@ -85,6 +85,12 @@ export default function Evaluator() {
   const minAngleRef = useRef(180);
   const sessionActiveRef = useRef(false);
 
+  const clearPoseCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  };
+
   useEffect(() => {
     sessionActiveRef.current = sessionActive;
   }, [sessionActive]);
@@ -212,6 +218,7 @@ export default function Evaluator() {
       if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
+      clearPoseCanvas();
       setCameraActive(false);
       setSessionActive(false);
       sessionActiveRef.current = false;
@@ -224,6 +231,7 @@ export default function Evaluator() {
     if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    clearPoseCanvas();
     setCameraActive(false);
     setSessionActive(false);
     sessionActiveRef.current = false;
@@ -463,7 +471,7 @@ function DepthGauge({ percent }) {
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           transform="rotate(-90 65 65)"
-          style={{ transition: "stroke-dashoffset 0.15s linear" }}
+          style={{ transition: "none" }}
         />
         <text x="65" y="72" textAnchor="middle" fill={COLORS.text} fontFamily={FONT_MONO} fontSize="22">
           {percent}%

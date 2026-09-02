@@ -48,11 +48,13 @@ def list_sessions():
     if not owner:
         return jsonify({"error": "Missing client identifier."}), 400
 
-    sessions = (
-        db.collection("sessions")
-        .where("clientId", "==", owner)
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .stream()
+    # Sort in Python so this works with Firestore's default indexes. A query
+    # that filters by clientId and orders by createdAt would otherwise require
+    # a manually-created composite Firestore index.
+    sessions = list(db.collection("sessions").where("clientId", "==", owner).stream())
+    sessions.sort(
+        key=lambda doc: (doc.to_dict().get("createdAt") or datetime.min.replace(tzinfo=timezone.utc)),
+        reverse=True,
     )
     return jsonify({"sessions": [session_response(doc) for doc in sessions]})
 
