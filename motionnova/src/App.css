@@ -1,0 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+* { box-sizing: border-box; }
+html { background: #070b13; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid #7defff; outline-offset: 3px; }
+.evaluator-insights b { display: block; color: #e8ecf5; font-size: 12px; }
+.evaluator-insights small { display: block; color: #7a8699; margin-top: 3px; font-size: 10px; }
+
+@media (max-width: 760px) {
+  .app-nav { padding: 14px 18px !important; align-items: flex-start !important; gap: 14px; }
+  .app-nav-links { gap: 14px !important; flex-wrap: wrap; justify-content: flex-end; }
+  .app-nav-link { font-size: 11px !important; }
+  .evaluator-content { padding: 24px 18px 44px !important; }
+  .evaluator-header { align-items: flex-start !important; gap: 16px; flex-direction: column; }
+  .evaluator-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+  .evaluator-insights { grid-template-columns: 1fr !important; }
+  .evaluator-title { font-size: 32px !important; }
+}
