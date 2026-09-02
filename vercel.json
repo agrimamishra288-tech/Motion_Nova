@@ -1,0 +1,5 @@
+{
+  "installCommand": "cd motionnova && npm ci",
+  "buildCommand": "cd motionnova && npm run build",
+  "outputDirectory": "motionnova/dist"
+}
