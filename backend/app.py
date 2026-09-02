@@ -37,7 +37,7 @@ def session_response(document):
     }
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return jsonify({"status": "ok"})
 
