@@ -79,10 +79,11 @@ def create_session():
     return jsonify({"id": reference.id}), 201
 
 
-@app.delete("/api/sessions/<session_id>")
-def delete_session(session_id):
+@app.delete("/api/sessions")
+def delete_session():
+    session_id = request.args.get("sessionId", "")
     owner = client_id()
-    if not owner:
+    if not owner or not session_id:
         return jsonify({"error": "Missing client identifier."}), 400
 
     reference = db.collection("sessions").document(session_id)

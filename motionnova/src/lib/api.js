@@ -36,7 +36,7 @@ export function getSessions() {
 }
 
 export function removeSession(sessionId) {
-  return request(`/api/sessions/${sessionId}`, { method: "DELETE" });
+  return request(`/api/sessions?sessionId=${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 }
 
 // An empty URL means use the Flask function deployed at /api on this Vercel site.

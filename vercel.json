@@ -3,7 +3,7 @@
   "buildCommand": "cd motionnova && npm run build",
   "outputDirectory": "motionnova/dist",
   "functions": {
-    "api/index.py": {
+    "api/*.py": {
       "includeFiles": "backend/**",
       "excludeFiles": "motionnova/node_modules/**"
     }
